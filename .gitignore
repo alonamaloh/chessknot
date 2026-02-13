@@ -1,3 +1,5 @@
 *.o
 perft
 test_search
+selfplay
+*.bin

@@ -83,13 +83,11 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     if (hash_stack_[ply - back] == h)
       return 0;
   }
-  // Check game history (positions before search root)
-  // game_history_ stores hashes in reverse chronological order,
-  // with game_history_[0] being the position before root.
-  // Positions at even offsets have the same side to move as root (ply 0),
-  // so for search ply, we need (ply % 2 == offset % 2).
-  for (std::size_t i = ply % 2; i < game_history_.size(); i += 2) {
-    if (game_history_[i] == h)
+  // Check game history (positions before search root, reverse chronological).
+  // Our hash encodes the side to move (white/black bitboards are distinct),
+  // so opposite-side positions won't match. Just scan all entries.
+  for (auto gh : game_history_) {
+    if (gh == h)
       return 0;
   }
 
