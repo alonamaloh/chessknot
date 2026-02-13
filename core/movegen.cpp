@@ -19,34 +19,40 @@ std::size_t generateMoves(const Board& board, MoveList& moves) {
   Bb M = M_abc ^ carry;
   Bb H = M_abc & carry;
 
-  Bb exactly[5] = {
-    ~(L | M | H),
-    L & ~M,
-    M & ~L,
-    M & L,
-    H
-  };
+  // enemyCount[sq] encoded in bits: H=bit2, M=bit1, L=bit0
+  // We need to compare source vs target counts.
+  // Pack per-square count into a lookup via the bitboards.
 
   Bb empty = board.empty();
   Bb white = board.white;
 
-  // Generate in order of increasing delta (to - from):
-  // try moves that don't increase neighbor count first
-  for (int delta = 0; delta <= 4; ++delta) {
-    for (int from = 0; from + delta <= 4; ++from) {
-      int to = from + delta;
-      Bb sources = exactly[from] & white;
-      Bb targets = exactly[to] & empty;
-      while (sources) {
-        int fsq = __builtin_ctzll(sources);
-        sources &= sources - 1;
-        Bb t = targets;
-        while (t) {
-          int tsq = __builtin_ctzll(t);
-          t &= t - 1;
-          moves.push_back(Move(fsq, tsq));
-        }
-      }
+  // For each white piece, try 4 wazir directions
+  Bb pieces = white;
+  while (pieces) {
+    int sq = __builtin_ctzll(pieces);
+    pieces &= pieces - 1;
+
+    // Source enemy neighbor count
+    int srcCount = ((H >> sq) & 1) * 4 + ((M >> sq) & 1) * 2 + ((L >> sq) & 1);
+
+    // Try 4 orthogonal neighbors
+    int file = sq & 7;
+    int targets[4];
+    int ntargets = 0;
+
+    if (sq + 8 < 64) targets[ntargets++] = sq + 8;  // up
+    if (sq - 8 >= 0)  targets[ntargets++] = sq - 8;  // down
+    if (file < 7)      targets[ntargets++] = sq + 1;  // right
+    if (file > 0)      targets[ntargets++] = sq - 1;  // left
+
+    for (int i = 0; i < ntargets; ++i) {
+      int tsq = targets[i];
+      Bb tBit = 1ULL << tsq;
+      if (!(tBit & empty)) continue;
+
+      int dstCount = ((H >> tsq) & 1) * 4 + ((M >> tsq) & 1) * 2 + ((L >> tsq) & 1);
+      if (dstCount >= srcCount)
+        moves.push_back(Move(sq, tsq));
     }
   }
 

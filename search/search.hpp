@@ -3,6 +3,7 @@
 #include "../core/board.hpp"
 #include "../core/movegen.hpp"
 #include "tt.hpp"
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -43,6 +44,7 @@ struct TimeControl {
   double hard_time_seconds = 0;
 
   std::uint64_t next_check = 0;
+  std::atomic<bool>* stop_flag = nullptr;
 
   void start();
   void check(std::uint64_t nodes);
@@ -65,6 +67,7 @@ public:
   void set_tt_size(std::size_t mb) { tt_ = TranspositionTable(mb); }
   void clear_tt() { tt_.clear(); }
   void set_verbose(bool v) { verbose_ = v; }
+  void set_stop_flag(std::atomic<bool>* flag) { stop_flag_ = flag; }
 
   // Set game history for repetition detection before search starts.
   // Hashes should be from alternating sides (as stored: always white-to-move).
@@ -85,6 +88,7 @@ private:
   std::uint64_t nodes_ = 0;
   TimeControl tc_;
   bool verbose_ = false;
+  std::atomic<bool>* stop_flag_ = nullptr;
 
   Move killers_[MAX_PLY][2] = {};
   std::int16_t history_[64][64] = {};

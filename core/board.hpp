@@ -52,8 +52,8 @@ struct FixedVector {
   const T* end() const { return data + count; }
 };
 
-// 16 pieces * 32 empty squares = 512 max moves
-using MoveList = FixedVector<Move, 512>;
+// 16 pieces * 4 wazir directions = 64 max moves
+using MoveList = FixedVector<Move, 64>;
 
 // Board state: white is always the side to move.
 // After each move we swap white and black.

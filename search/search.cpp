@@ -1,31 +1,11 @@
 #include "search.hpp"
-#include "../core/policy.hpp"
+#include "../core/random.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
 
 namespace search {
-
-// Policy logits from training_data7.policy (225 = 15x15 move classes)
-// moveClass = (NEIGHBOR_OFFSET[w_before]+b_before)*15 + (NEIGHBOR_OFFSET[w_after]+b_after)
-static constexpr float POLICY_LOGITS[225] = {
-  +6.171f, +5.932f, +3.982f, +1.823f, -3.342f, +5.791f, +5.505f, +3.172f, +1.274f, +5.237f, +3.571f, +0.935f, +3.930f, +1.518f, -0.123f,
-  -3.342f, +8.814f, +6.383f, +3.999f, -0.346f, -3.342f, +8.151f, +5.160f, +2.601f, -3.342f, +5.993f, +2.024f, -3.342f, +2.493f, -3.342f,
-  -3.342f, -3.342f, +8.978f, +5.550f, +2.180f, -3.342f, -3.342f, +7.132f, +2.798f, -3.342f, -3.342f, +3.615f, -3.342f, -3.342f, -3.342f,
-  -3.342f, -3.342f, -3.342f, +6.447f, +2.433f, -3.342f, -3.342f, -3.342f, +3.715f, -3.342f, -3.342f, -3.342f, -3.342f, -3.342f, -3.342f,
-  -3.342f, -3.342f, -3.342f, -3.342f, +2.359f, -3.342f, -3.342f, -3.342f, -3.342f, -3.342f, -3.342f, -3.342f, -3.342f, -3.342f, -3.342f,
-  +5.715f, +5.929f, +4.219f, +2.015f, -2.648f, +6.709f, +5.814f, +3.509f, +1.028f, +5.789f, +3.400f, +1.293f, +3.617f, +0.629f, -0.164f,
-  -3.342f, +8.269f, +5.791f, +3.302f, -1.396f, -3.342f, +7.984f, +4.998f, +2.219f, -3.342f, +5.672f, +2.293f, -3.342f, +2.585f, -3.342f,
-  -3.342f, -3.342f, +7.200f, +3.892f, +0.242f, -3.342f, -3.342f, +6.261f, +2.223f, -3.342f, -3.342f, +2.968f, -3.342f, -3.342f, -3.342f,
-  -3.342f, -3.342f, -3.342f, +3.787f, -0.164f, -3.342f, -3.342f, -3.342f, +2.493f, -3.342f, -3.342f, -3.342f, -3.342f, -3.342f, -3.342f,
-  +4.783f, +4.326f, +2.593f, +0.372f, -3.342f, +5.187f, +4.211f, +1.957f, -0.777f, +5.701f, +2.079f, -0.508f, +2.950f, -0.123f, -1.396f,
-  -3.342f, +6.354f, +3.816f, +1.412f, -1.955f, -3.342f, +6.058f, +3.376f, +0.935f, -3.342f, +4.285f, +1.191f, -3.342f, +1.243f, -3.342f,
-  -3.342f, -3.342f, +3.581f, +0.443f, -3.342f, -3.342f, -3.342f, +2.779f, -0.251f, -3.342f, -3.342f, +0.487f, -3.342f, -3.342f, -3.342f,
-  +3.719f, +3.181f, +1.254f, -0.009f, -3.342f, +2.785f, +2.635f, -0.083f, -2.648f, +2.779f, -0.046f, -3.342f, +1.065f, -1.396f, -1.955f,
-  -3.342f, +3.567f, +1.350f, -1.262f, -3.342f, -3.342f, +3.328f, +0.976f, -1.732f, -3.342f, +1.642f, -2.243f, -3.342f, -0.857f, -3.342f,
-  +0.817f, -1.396f, -2.648f, -3.342f, -3.342f, -0.123f, -1.550f, -2.648f, -3.342f, -1.262f, -2.648f, -3.342f, -2.243f, -3.342f, -3.342f,
-};
 
 // --- TimeControl ---
 
@@ -37,6 +17,8 @@ void TimeControl::start() {
 }
 
 void TimeControl::check(std::uint64_t nodes) {
+  if (stop_flag && stop_flag->load(std::memory_order_relaxed))
+    throw SearchInterrupted{};
   if (hard_node_limit > 0 && nodes >= hard_node_limit)
     throw SearchInterrupted{};
   if (hard_time_seconds > 0 && elapsed_seconds() >= hard_time_seconds)
@@ -194,14 +176,8 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     if (is_first) {
       score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
     } else {
-      // LMR: reduce late moves based on depth and policy logit
-      int reduction = 0;
-      if (depth >= 3) {
-        float logit = POLICY_LOGITS[moveClass(board, move)];
-        if (logit >= 6.0f) reduction = 0;
-        else if (logit >= 2.0f) reduction = 1;
-        else reduction = 1 + (depth >= 5 ? 1 : 0);
-      }
+      // LMR: flat reduction for late moves
+      int reduction = (depth >= 3) ? 1 : 0;
       // PVS: null-window search, possibly at reduced depth
       score = -negamax(child, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
       if (score > alpha)
@@ -315,6 +291,7 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
   nodes_ = 0;
   tt_.new_search();
   tc_ = tc;
+  tc_.stop_flag = stop_flag_;
   tc_.start();
   std::memset(killers_, 0, sizeof(killers_));
   std::memset(history_, 0, sizeof(history_));
@@ -335,6 +312,13 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
     result.depth = 1;
     result.score = -eval_(makeMove(board, root_moves[0]));
     return result;
+  }
+
+  // Shuffle root moves for variety — iterative deepening corrects order after depth 1
+  {
+    auto seed = static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+    RandomBits rng(seed);
+    std::shuffle(root_moves.begin(), root_moves.end(), rng);
   }
 
   for (int depth = 1; depth <= max_depth; ++depth) {
