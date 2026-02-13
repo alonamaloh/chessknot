@@ -3,3 +3,4 @@ perft
 test_search
 selfplay
 *.bin
+*.h5

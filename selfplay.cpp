@@ -1,48 +1,18 @@
 #include "core/board.hpp"
+#include "core/features.hpp"
 #include "core/movegen.hpp"
+#include "nn/mlp.hpp"
 #include "search/search.hpp"
 #include <H5Cpp.h>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <random>
 #include <thread>
 #include <vector>
-
-// Classify all 64 squares into 45 classes:
-//   3 contents (empty=0, white=1, black=2) x
-//   15 neighbor configs (w_neighbors, b_neighbors) with w+b <= 4
-void computeClassCounts(const Board& board, std::uint8_t counts[45]) {
-  Bb w = board.white;
-  Bb aw = w << 8, bw = w >> 8;
-  Bb cw = (w & ~FILE_H) << 1, dw = (w & ~FILE_A) >> 1;
-  Bb ab_xor = aw ^ bw, ab_and = aw & bw;
-  Bb Labc = ab_xor ^ cw, Mabc = ab_and | (ab_xor & cw);
-  Bb Lw = Labc ^ dw, carry = Labc & dw;
-  Bb Mw = Mabc ^ carry, Hw = Mabc & carry;
-  Bb ew[5] = {~(Lw|Mw|Hw), Lw & ~Mw, Mw & ~Lw, Mw & Lw, Hw};
-
-  Bb b = board.black;
-  Bb ab2 = b << 8, bb2 = b >> 8;
-  Bb cb2 = (b & ~FILE_H) << 1, db2 = (b & ~FILE_A) >> 1;
-  ab_xor = ab2 ^ bb2; ab_and = ab2 & bb2;
-  Labc = ab_xor ^ cb2; Mabc = ab_and | (ab_xor & cb2);
-  Bb Lb = Labc ^ db2; carry = Labc & db2;
-  Bb Mb = Mabc ^ carry, Hb = Mabc & carry;
-  Bb eb[5] = {~(Lb|Mb|Hb), Lb & ~Mb, Mb & ~Lb, Mb & Lb, Hb};
-
-  Bb content[3] = {board.empty(), board.white, board.black};
-  constexpr int offset[5] = {0, 5, 9, 12, 14};
-
-  std::memset(counts, 0, 45);
-  for (int c = 0; c < 3; ++c)
-    for (int wn = 0; wn <= 4; ++wn)
-      for (int bn = 0; wn + bn <= 4; ++bn)
-        counts[c * 15 + offset[wn] + bn] =
-            static_cast<std::uint8_t>(__builtin_popcountll(content[c] & ew[wn] & eb[bn]));
-}
 
 // Data for one completed game
 struct GameData {
@@ -51,12 +21,9 @@ struct GameData {
   std::vector<std::int8_t> outcome;
 };
 
-// Play one self-play game. Returns: +1 first mover wins, -1 second mover wins, 0 draw.
-int playGame(search::Searcher& searcher, std::uint64_t seed,
-             GameData& gd, int node_limit, int max_plies) {
-  Board board;
-
-  auto eval = [seed](const Board& b) -> int {
+// Random eval seeded per game
+static search::EvalFunc makeRandomEval(std::uint64_t seed) {
+  return [seed](const Board& b) -> int {
     std::uint64_t h = b.hash() ^ seed;
     h ^= h >> 33;
     h *= 0xff51afd7ed558ccdULL;
@@ -65,6 +32,13 @@ int playGame(search::Searcher& searcher, std::uint64_t seed,
     h ^= h >> 33;
     return static_cast<int>(static_cast<std::int64_t>(h) % 10001);
   };
+}
+
+// Play one self-play game. Returns: +1 first mover wins, -1 second mover wins, 0 draw.
+int playGame(search::Searcher& searcher, const search::EvalFunc& eval,
+             GameData& gd, int node_limit, int max_plies) {
+  Board board;
+
   searcher.set_eval(eval);
   searcher.clear_tt();
 
@@ -215,26 +189,44 @@ int main(int argc, char* argv[]) {
   int num_games = 1000;
   int node_limit = 10000;
   int num_threads = static_cast<int>(std::thread::hardware_concurrency());
-  int flush_interval = 100;  // flush every N games
+  int flush_interval = 100;
   const char* output_file = "training_data.h5";
+  const char* model_path = nullptr;
 
   if (argc > 1 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
-    std::cout << "Usage: selfplay [num_games] [nodes_per_move] [output_file] [threads] [flush_interval]\n"
+    std::cout << "Usage: selfplay [num_games] [nodes_per_move] [output_file] [threads] [flush_interval] [-m model.bin]\n"
               << "  num_games      Number of self-play games (default: 1000)\n"
               << "  nodes_per_move Node limit per search (default: 10000)\n"
               << "  output_file    HDF5 output path (default: training_data.h5)\n"
               << "  threads        Number of threads (default: hardware concurrency)\n"
-              << "  flush_interval Flush to disk every N games (default: 100)\n";
+              << "  flush_interval Flush to disk every N games (default: 100)\n"
+              << "  -m model.bin   Use NN model for eval (default: random eval)\n";
     return 0;
   }
 
-  if (argc > 1) num_games = std::atoi(argv[1]);
-  if (argc > 2) node_limit = std::atoi(argv[2]);
-  if (argc > 3) output_file = argv[3];
-  if (argc > 4) num_threads = std::atoi(argv[4]);
-  if (argc > 5) flush_interval = std::atoi(argv[5]);
+  // Parse positional args, then check for -m flag
+  std::vector<std::string> positional;
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "-m" && i + 1 < argc) {
+      model_path = argv[++i];
+    } else {
+      positional.push_back(argv[i]);
+    }
+  }
+  if (positional.size() > 0) num_games = std::atoi(positional[0].c_str());
+  if (positional.size() > 1) node_limit = std::atoi(positional[1].c_str());
+  if (positional.size() > 2) output_file = positional[2].c_str();
+  if (positional.size() > 3) num_threads = std::atoi(positional[3].c_str());
+  if (positional.size() > 4) flush_interval = std::atoi(positional[4].c_str());
   if (num_threads < 1) num_threads = 1;
   if (flush_interval < 1) flush_interval = 1;
+
+  // Load model if specified (shared across threads, evaluate() is const)
+  std::shared_ptr<nn::MLP> model;
+  if (model_path) {
+    model = std::make_shared<nn::MLP>(model_path);
+    std::cout << "Using NN model: " << model_path << std::endl;
+  }
 
   std::cout << "Self-play: " << num_games << " games, "
             << node_limit << " nodes/move, "
@@ -262,7 +254,12 @@ int main(int argc, char* argv[]) {
       if (game >= num_games) break;
 
       GameData gd;
-      int result = playGame(searcher, seeds[game], gd, node_limit, 500);
+      search::EvalFunc eval;
+      if (model)
+        eval = [&model](const Board& b) { return model->evaluate(b); };
+      else
+        eval = makeRandomEval(seeds[game]);
+      int result = playGame(searcher, eval, gd, node_limit, 500);
 
       if (result > 0) total_wins++;
       else if (result < 0) total_losses++;
