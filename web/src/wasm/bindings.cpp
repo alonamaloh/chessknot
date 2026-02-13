@@ -141,6 +141,44 @@ val doSearch(const JSBoard& jsboard, int max_depth, double soft_time, double har
     return result;
 }
 
+// Get locked pieces (pieces with no legal moves) for both sides.
+// Returns {whiteLo, whiteHi, blackLo, blackHi} in game perspective.
+val getLockedPieces(const JSBoard& jsboard) {
+    val result = val::object();
+
+    // STM pieces that can move
+    MoveList stm_moves;
+    generateMoves(jsboard.board, stm_moves);
+    uint64_t stm_movable = 0;
+    for (const auto& m : stm_moves) {
+        stm_movable |= (1ULL << m.from);
+    }
+    uint64_t stm_locked = jsboard.board.white & ~stm_movable;
+
+    // Opponent pieces that can move (swap sides)
+    Board opp_board(jsboard.board.black, jsboard.board.white);
+    MoveList opp_moves;
+    generateMoves(opp_board, opp_moves);
+    uint64_t opp_movable = 0;
+    for (const auto& m : opp_moves) {
+        opp_movable |= (1ULL << m.from);
+    }
+    uint64_t opp_locked = jsboard.board.black & ~opp_movable;
+
+    // Map back to game perspective
+    // board.white = STM, board.black = opponent
+    // If white_to_move: STM = game-white, opponent = game-black
+    // If black_to_move: STM = game-black, opponent = game-white
+    uint64_t game_white_locked = jsboard.white_to_move ? stm_locked : opp_locked;
+    uint64_t game_black_locked = jsboard.white_to_move ? opp_locked : stm_locked;
+
+    result.set("whiteLo", static_cast<uint32_t>(game_white_locked));
+    result.set("whiteHi", static_cast<uint32_t>(game_white_locked >> 32));
+    result.set("blackLo", static_cast<uint32_t>(game_black_locked));
+    result.set("blackHi", static_cast<uint32_t>(game_black_locked >> 32));
+    return result;
+}
+
 void stopSearch() {
     // No-op without pthreads. Search stops via TimeControl.
 }
@@ -164,6 +202,7 @@ EMSCRIPTEN_BINDINGS(chessknot_engine) {
     function("search", &doSearch);
     function("loadNNModel", &loadNNModel);
     function("hasNNModel", &hasNNModel);
+    function("getLockedPieces", &getLockedPieces);
     function("stopSearch", &stopSearch);
     function("getEngineVersion", &getEngineVersion);
 }

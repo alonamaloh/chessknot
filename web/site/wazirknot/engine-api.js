@@ -85,6 +85,11 @@ export class EngineAPI {
         return response.board;
     }
 
+    async getLockedPieces() {
+        const response = await this.request('getLockedPieces');
+        return response.locked;
+    }
+
     async search(softTime = 3, hardTime = 10) {
         const response = await this.request('search', { softTime, hardTime });
         return response.result;

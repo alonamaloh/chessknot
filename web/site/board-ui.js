@@ -34,6 +34,12 @@ export class BoardUI {
         this.lastMove = null;          // { from, to }
         this.flipped = false;
 
+        // Locked pieces (no legal moves) — bitboards in game perspective
+        this.lockedWhiteLo = 0;
+        this.lockedWhiteHi = 0;
+        this.lockedBlackLo = 0;
+        this.lockedBlackHi = 0;
+
         // Colors
         this.colors = {
             lightSquare: '#F0D9B5',
@@ -87,6 +93,14 @@ export class BoardUI {
 
     clearLastMove() {
         this.lastMove = null;
+        this.render();
+    }
+
+    setLockedPieces(wLo, wHi, bLo, bHi) {
+        this.lockedWhiteLo = wLo >>> 0;
+        this.lockedWhiteHi = wHi >>> 0;
+        this.lockedBlackLo = bLo >>> 0;
+        this.lockedBlackHi = bHi >>> 0;
         this.render();
     }
 
@@ -144,6 +158,14 @@ export class BoardUI {
             if (isWhite || isBlack) {
                 this._drawPiece(square, isWhite);
             }
+        }
+
+        // Draw lock icons on immovable pieces
+        for (let square = 0; square < 64; square++) {
+            const wLocked = hasBit(this.lockedWhiteLo, this.lockedWhiteHi, square);
+            const bLocked = hasBit(this.lockedBlackLo, this.lockedBlackHi, square);
+            if (wLocked) this._drawLock(square, true);
+            if (bLocked) this._drawLock(square, false);
         }
 
         // Draw legal move dots
@@ -228,6 +250,58 @@ export class BoardUI {
             ctx.fillStyle = this.colors.legalDot;
             ctx.fill();
         }
+    }
+
+    _drawLock(square, isWhitePiece) {
+        const rank = Math.floor(square / 8);
+        const file = square % 8;
+        const displayRank = this.flipped ? rank : 7 - rank;
+        const displayFile = this.flipped ? 7 - file : file;
+        const cx = displayFile * this.squareSize + this.squareSize / 2;
+        const cy = displayRank * this.squareSize + this.squareSize / 2;
+
+        const ctx = this.ctx;
+        const s = this.squareSize * 0.18; // lock icon scale
+
+        // Position: bottom-right of the square center
+        const lx = cx + this.squareSize * 0.12;
+        const ly = cy + this.squareSize * 0.10;
+
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+
+        const color = isWhitePiece ? '#444' : '#ddd';
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+
+        // Lock body (rounded rectangle)
+        const bw = s * 1.1;
+        const bh = s * 0.85;
+        const bx = lx - bw / 2;
+        const by = ly - bh * 0.2;
+        const br = s * 0.15;
+
+        ctx.beginPath();
+        ctx.moveTo(bx + br, by);
+        ctx.lineTo(bx + bw - br, by);
+        ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + br);
+        ctx.lineTo(bx + bw, by + bh - br);
+        ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - br, by + bh);
+        ctx.lineTo(bx + br, by + bh);
+        ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - br);
+        ctx.lineTo(bx, by + br);
+        ctx.quadraticCurveTo(bx, by, bx + br, by);
+        ctx.closePath();
+        ctx.fill();
+
+        // Shackle (arc on top)
+        ctx.beginPath();
+        ctx.lineWidth = s * 0.25;
+        ctx.lineCap = 'round';
+        ctx.arc(lx, by, s * 0.35, Math.PI, 0);
+        ctx.stroke();
+
+        ctx.restore();
     }
 
     _drawLabels() {

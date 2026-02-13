@@ -58,6 +58,11 @@ function getBoardState() {
     };
 }
 
+function getLockedPieces() {
+    if (!engine || !board) return { whiteLo: 0, whiteHi: 0, blackLo: 0, blackHi: 0 };
+    return engine.getLockedPieces(board);
+}
+
 function search(softTime, hardTime) {
     if (!engine || !board) {
         return { error: 'Engine not ready' };
@@ -109,6 +114,10 @@ self.onmessage = function(e) {
 
             case 'getBoard':
                 response.board = getBoardState();
+                break;
+
+            case 'getLockedPieces':
+                response.locked = getLockedPieces();
                 break;
 
             case 'search':

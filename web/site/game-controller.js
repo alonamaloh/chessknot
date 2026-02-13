@@ -97,6 +97,16 @@ export class GameController {
             const winner = loser === 'white' ? 'black' : 'white';
             this._setGameOver(winner, 'no moves');
         }
+
+        await this._updateLockedPieces();
+    }
+
+    async _updateLockedPieces() {
+        const locked = await this.engine.getLockedPieces();
+        this.boardUI.setLockedPieces(
+            locked.whiteLo, locked.whiteHi,
+            locked.blackLo, locked.blackHi
+        );
     }
 
     _setGameOver(winner, reason) {
