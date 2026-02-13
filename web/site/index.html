@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChessKnot</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="coi-serviceworker.js"></script>
+</head>
+<body>
+    <!-- Loading screen -->
+    <div id="loading" class="loading-container">
+        <div class="loading-content">
+            <h1>ChessKnot</h1>
+            <div class="spinner"></div>
+            <p id="loading-status">Loading...</p>
+        </div>
+    </div>
+
+    <!-- Main game container -->
+    <div id="game-container" class="game-container" style="display: none;">
+        <main class="main-content">
+            <!-- Board section -->
+            <section class="board-section">
+                <!-- Toolbar -->
+                <div class="game-toolbar">
+                    <button id="btn-new-game" class="btn btn-small">New</button>
+                    <button id="btn-undo" class="btn btn-small" title="Undo" disabled>&#x25C0;</button>
+                    <button id="btn-redo" class="btn btn-small" title="Redo" disabled>&#x25B6;</button>
+                    <button id="btn-flip" class="btn btn-small">Flip</button>
+                    <button id="btn-stop" class="btn btn-small" disabled>Stop</button>
+                </div>
+
+                <div class="board-container">
+                    <canvas id="board" width="480" height="480"></canvas>
+                </div>
+
+                <p id="status" class="status-text">White to move</p>
+
+                <!-- Search info -->
+                <div id="search-info" class="search-info" style="display: none;">
+                    <span id="search-summary">-</span>
+                </div>
+            </section>
+
+            <!-- Controls section -->
+            <section class="controls-section">
+                <!-- Engine controls -->
+                <div class="control-group">
+                    <h3>Engine</h3>
+                    <div class="input-group">
+                        <label>Time/move:</label>
+                        <input id="time-input" type="number" min="0.1" step="0.5" value="3" style="width: 4em;">
+                        <span>s</span>
+                    </div>
+                    <div class="toggle-group">
+                        <button id="btn-engine-white" class="toggle-btn">Eng. White</button>
+                        <button id="btn-engine-black" class="toggle-btn active">Eng. Black</button>
+                        <button id="btn-two-player" class="toggle-btn">2 Players</button>
+                        <button id="btn-auto" class="toggle-btn">Auto</button>
+                    </div>
+                </div>
+
+                <!-- Move history -->
+                <div class="control-group">
+                    <h3>Moves</h3>
+                    <div id="move-history" class="move-history"></div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>ChessKnot Engine &mdash; WebAssembly Edition</p>
+        </footer>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>

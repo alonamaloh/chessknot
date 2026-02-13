@@ -1,0 +1,86 @@
+# WebAssembly build for ChessKnot engine
+# Requires Emscripten SDK (emcc)
+
+EMCXX = em++
+
+WASM_CXXFLAGS = -std=c++20 -O3 -DWASM_BUILD -Wall -Wextra -fexceptions -msimd128
+
+WASM_LDFLAGS = \
+    -lembind \
+    -fexceptions \
+    -s MODULARIZE=1 \
+    -s EXPORT_NAME='ChessKnotEngine' \
+    -s ALLOW_MEMORY_GROWTH=1 \
+    -s INITIAL_MEMORY=134217728 \
+    -s ENVIRONMENT='worker' \
+    -s FILESYSTEM=1 \
+    -s EXPORTED_RUNTIME_METHODS='["FS"]' \
+    -s NO_EXIT_RUNTIME=1 \
+    -s SINGLE_FILE=0
+
+SRCDIR = ..
+WEBDIR = .
+DISTDIR = $(WEBDIR)/dist
+OBJDIR = $(WEBDIR)/obj
+
+CORE_SRCS = \
+    $(SRCDIR)/core/board.cpp \
+    $(SRCDIR)/core/movegen.cpp
+
+SEARCH_SRCS = \
+    $(SRCDIR)/search/search.cpp \
+    $(SRCDIR)/search/tt.cpp
+
+NN_SRCS = \
+    $(SRCDIR)/nn/mlp.cpp
+
+WASM_SRCS = \
+    $(WEBDIR)/src/wasm/bindings.cpp
+
+ALL_SRCS = $(CORE_SRCS) $(SEARCH_SRCS) $(NN_SRCS) $(WASM_SRCS)
+
+OBJS = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(CORE_SRCS) $(SEARCH_SRCS) $(NN_SRCS))
+OBJS += $(patsubst $(WEBDIR)/%.cpp,$(OBJDIR)/%.o,$(WASM_SRCS))
+
+WASM_OUT = $(DISTDIR)/engine.js
+
+SITEDIST = $(WEBDIR)/site/dist
+
+all: dirs $(WASM_OUT) deploy
+
+dirs:
+	@mkdir -p $(DISTDIR)
+	@mkdir -p $(OBJDIR)/core
+	@mkdir -p $(OBJDIR)/search
+	@mkdir -p $(OBJDIR)/nn
+	@mkdir -p $(OBJDIR)/src/wasm
+
+$(WASM_OUT): $(OBJS)
+	$(EMCXX) $(WASM_CXXFLAGS) $(WASM_LDFLAGS) -o $@ $^
+	@echo "Built: $(WASM_OUT)"
+	@ls -lh $(DISTDIR)/engine.*
+
+$(OBJDIR)/core/%.o: $(SRCDIR)/core/%.cpp
+	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/search/%.o: $(SRCDIR)/search/%.cpp
+	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/nn/%.o: $(SRCDIR)/nn/%.cpp
+	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/src/wasm/%.o: $(WEBDIR)/src/wasm/%.cpp FORCE
+	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+
+FORCE:
+
+deploy: $(WASM_OUT)
+	@mkdir -p $(SITEDIST)
+	cp $(DISTDIR)/engine.js $(SITEDIST)/
+	cp $(DISTDIR)/engine.wasm $(SITEDIST)/
+	@echo "Deployed to $(SITEDIST)/"
+
+clean:
+	rm -rf $(OBJDIR) $(DISTDIR) $(SITEDIST)
+
+.PHONY: all dirs clean deploy FORCE
