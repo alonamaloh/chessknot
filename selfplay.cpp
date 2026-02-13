@@ -1,6 +1,7 @@
 #include "core/board.hpp"
 #include "core/features.hpp"
 #include "core/movegen.hpp"
+#include "core/random.hpp"
 #include "nn/mlp.hpp"
 #include "search/search.hpp"
 #include <H5Cpp.h>
@@ -10,7 +11,6 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <random>
 #include <thread>
 #include <vector>
 
@@ -36,7 +36,8 @@ static search::EvalFunc makeRandomEval(std::uint64_t seed) {
 
 // Play one self-play game. Returns: +1 first mover wins, -1 second mover wins, 0 draw.
 int playGame(search::Searcher& searcher, const search::EvalFunc& eval,
-             GameData& gd, int node_limit, int max_plies) {
+             RandomBits& rng, GameData& gd, int node_limit,
+             int random_plies, int max_plies) {
   Board board;
 
   searcher.set_eval(eval);
@@ -70,14 +71,20 @@ int playGame(search::Searcher& searcher, const search::EvalFunc& eval,
 
     gd.outcome.push_back(0);
 
-    std::vector<std::uint64_t> history;
-    for (int i = static_cast<int>(hashes.size()) - 2; i >= 0; --i)
-      history.push_back(hashes[i]);
-    searcher.set_history(history);
+    Move chosen;
+    if (ply < random_plies) {
+      chosen = moves[rng() % moves.size()];
+    } else {
+      std::vector<std::uint64_t> history;
+      for (int i = static_cast<int>(hashes.size()) - 2; i >= 0; --i)
+        history.push_back(hashes[i]);
+      searcher.set_history(history);
 
-    auto tc = search::TimeControl::with_nodes(node_limit);
-    auto result = searcher.search(board, 100, tc);
-    board = makeMove(board, result.best_move);
+      auto tc = search::TimeControl::with_nodes(node_limit);
+      auto result = searcher.search(board, 100, tc);
+      chosen = result.best_move;
+    }
+    board = makeMove(board, chosen);
   }
 
   // Label all positions
@@ -233,9 +240,10 @@ int main(int argc, char* argv[]) {
             << num_threads << " threads, flush every "
             << flush_interval << " games, output: " << output_file << std::endl;
 
-  std::mt19937_64 rng(42);
+  std::uint64_t base_seed = 42;
+  RandomBits seed_rng(base_seed);
   std::vector<std::uint64_t> seeds(num_games);
-  for (auto& s : seeds) s = rng();
+  for (auto& s : seeds) s = seed_rng();
 
   HDF5Writer writer(output_file);
   std::mutex writer_mutex;
@@ -245,9 +253,10 @@ int main(int argc, char* argv[]) {
   std::atomic<int> next_game{0};
   std::atomic<int> total_wins{0}, total_losses{0}, total_draws{0};
 
-  auto worker = [&](int /*tid*/) {
+  auto worker = [&](int tid) {
     search::Searcher searcher;
     searcher.set_tt_size(16);
+    RandomBits rng(base_seed + tid * 0x9e3779b97f4a7c15ULL);
 
     while (true) {
       int game = next_game.fetch_add(1);
@@ -259,7 +268,7 @@ int main(int argc, char* argv[]) {
         eval = [&model](const Board& b) { return model->evaluate(b); };
       else
         eval = makeRandomEval(seeds[game]);
-      int result = playGame(searcher, eval, gd, node_limit, 500);
+      int result = playGame(searcher, eval, rng, gd, node_limit, 10, 500);
 
       if (result > 0) total_wins++;
       else if (result < 0) total_losses++;
