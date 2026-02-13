@@ -1,16 +1,19 @@
 #include "core/board.hpp"
 #include "core/features.hpp"
 #include "core/movegen.hpp"
+#include "core/policy.hpp"
 #include "core/random.hpp"
 #include "nn/mlp.hpp"
 #include "search/search.hpp"
 #include <H5Cpp.h>
 #include <atomic>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -19,6 +22,7 @@ struct GameData {
   std::vector<std::uint64_t> white, black;
   std::vector<std::uint8_t> counts;  // flattened, 45 per position
   std::vector<std::int8_t> outcome;
+  std::vector<std::uint8_t> move_from, move_to;  // chosen move per position
 };
 
 // Random eval seeded per game
@@ -37,7 +41,8 @@ static search::EvalFunc makeRandomEval(std::uint64_t seed) {
 // Play one self-play game. Returns: +1 first mover wins, -1 second mover wins, 0 draw.
 int playGame(search::Searcher& searcher, const search::EvalFunc& eval,
              RandomBits& rng, GameData& gd, int node_limit,
-             int random_plies, int max_plies) {
+             int random_plies, int max_plies,
+             std::atomic<std::uint64_t>* class_counts) {
   Board board;
 
   searcher.set_eval(eval);
@@ -83,7 +88,11 @@ int playGame(search::Searcher& searcher, const search::EvalFunc& eval,
       auto tc = search::TimeControl::with_nodes(node_limit);
       auto result = searcher.search(board, 100, tc);
       chosen = result.best_move;
+
+      class_counts[moveClass(board, chosen)].fetch_add(1, std::memory_order_relaxed);
     }
+    gd.move_from.push_back(chosen.from);
+    gd.move_to.push_back(chosen.to);
     board = makeMove(board, chosen);
   }
 
@@ -115,6 +124,8 @@ public:
     file.createDataSet("white", H5::PredType::NATIVE_UINT64, space1, plist1);
     file.createDataSet("black", H5::PredType::NATIVE_UINT64, space1, plist1);
     file.createDataSet("outcome", H5::PredType::NATIVE_INT8, space1, plist1);
+    file.createDataSet("move_from", H5::PredType::NATIVE_UINT8, space1, plist1);
+    file.createDataSet("move_to", H5::PredType::NATIVE_UINT8, space1, plist1);
 
     hsize_t zero2[2] = {0, 45}, max2[2] = {H5S_UNLIMITED, 45};
     hsize_t chunk2[2] = {4096, 45};
@@ -134,15 +145,18 @@ public:
     for (auto& g : games) n += g.outcome.size();
 
     std::vector<std::uint64_t> w, b;
-    std::vector<std::uint8_t> c;
+    std::vector<std::uint8_t> c, mf, mt;
     std::vector<std::int8_t> o;
     w.reserve(n); b.reserve(n); c.reserve(n * 45); o.reserve(n);
+    mf.reserve(n); mt.reserve(n);
 
     for (auto& g : games) {
       w.insert(w.end(), g.white.begin(), g.white.end());
       b.insert(b.end(), g.black.begin(), g.black.end());
       c.insert(c.end(), g.counts.begin(), g.counts.end());
       o.insert(o.end(), g.outcome.begin(), g.outcome.end());
+      mf.insert(mf.end(), g.move_from.begin(), g.move_from.end());
+      mt.insert(mt.end(), g.move_to.begin(), g.move_to.end());
     }
     games.clear();
 
@@ -166,6 +180,8 @@ public:
     extend1("white", w.data(), H5::PredType::NATIVE_UINT64);
     extend1("black", b.data(), H5::PredType::NATIVE_UINT64);
     extend1("outcome", o.data(), H5::PredType::NATIVE_INT8);
+    extend1("move_from", mf.data(), H5::PredType::NATIVE_UINT8);
+    extend1("move_to", mt.data(), H5::PredType::NATIVE_UINT8);
 
     // class_counts is 2D
     {
@@ -250,6 +266,9 @@ int main(int argc, char* argv[]) {
   std::vector<std::uint64_t> seeds(num_games);
   for (auto& s : seeds) s = seed_rng();
 
+  std::atomic<std::uint64_t> class_counts[NUM_MOVE_CLASSES];
+  for (auto& c : class_counts) c.store(0, std::memory_order_relaxed);
+
   HDF5Writer writer(output_file);
   std::mutex writer_mutex;
   std::vector<GameData> pending_games;
@@ -282,7 +301,7 @@ int main(int argc, char* argv[]) {
       } else {
         eval = makeRandomEval(seeds[game]);
       }
-      int result = playGame(searcher, eval, rng, gd, node_limit, 20, 500);
+      int result = playGame(searcher, eval, rng, gd, node_limit, 20, 500, class_counts);
 
       if (result > 0) total_wins++;
       else if (result < 0) total_losses++;
@@ -329,6 +348,24 @@ int main(int argc, char* argv[]) {
             << (total_wins + total_losses + total_draws) << " games"
             << "  W:" << total_wins.load() << " B:" << total_losses.load()
             << " D:" << total_draws.load() << std::endl;
+
+  // Compute policy logits from move class counts: logits = log(count + 1), normalized
+  PolicyTable policy;
+  for (int i = 0; i < NUM_MOVE_CLASSES; ++i)
+    policy.logits[i] = std::log(static_cast<float>(class_counts[i].load()) + 1.0f);
+
+  float mean = 0;
+  for (int i = 0; i < NUM_MOVE_CLASSES; ++i) mean += policy.logits[i];
+  mean /= NUM_MOVE_CLASSES;
+  for (int i = 0; i < NUM_MOVE_CLASSES; ++i) policy.logits[i] -= mean;
+
+  std::string policy_path(output_file);
+  auto dot = policy_path.rfind('.');
+  if (dot != std::string::npos) policy_path = policy_path.substr(0, dot);
+  policy_path += ".policy";
+  policy.save(policy_path.c_str());
+
+  std::cout << "Policy saved to " << policy_path << std::endl;
 
   return 0;
 }
