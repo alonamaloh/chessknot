@@ -1,33 +1,30 @@
 #!/usr/bin/env python3
 """Train a simple MLP to evaluate Chessnot positions.
 
-Architecture: 45 -> 128 (ReLU) -> 64 (ReLU) -> 1 (tanh)
+Architecture: 45 -> 32 (ReLU) -> 1 (tanh)
 Input: 45 class counts normalized by /64
 Output: tanh, target is game outcome in {-1, 0, +1}
 Loss: MSE
 
-Usage: python train.py [training_data.h5] [output_model.bin] [epochs]
+Usage: python train.py [data_glob] [output_model.bin] [epochs]
 """
 
-import struct
+import glob
 import sys
 
 import h5py
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
 
 
 class ChessnotMLP(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(45, 128),
+            nn.Linear(45, 32),
             nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1),
+            nn.Linear(32, 1),
             nn.Tanh(),
         )
 
@@ -35,11 +32,17 @@ class ChessnotMLP(nn.Module):
         return self.net(x).squeeze(-1)
 
 
-def load_data(path):
-    with h5py.File(path, "r") as f:
-        counts = f["class_counts"][:].astype(np.float32) / 64.0
-        outcome = f["outcome"][:].astype(np.float32)
-    return counts, outcome
+def load_data(pattern):
+    paths = sorted(glob.glob(pattern))
+    if not paths:
+        raise FileNotFoundError(f"No files matching: {pattern}")
+    all_counts, all_outcome = [], []
+    for path in paths:
+        with h5py.File(path, "r") as f:
+            all_counts.append(f["class_counts"][:].astype(np.float32) / 64.0)
+            all_outcome.append(f["outcome"][:].astype(np.float32))
+        print(f"  {path}: {len(all_counts[-1])} positions")
+    return np.concatenate(all_counts), np.concatenate(all_outcome)
 
 
 def export_model(model, path):
@@ -56,12 +59,12 @@ def export_model(model, path):
 
 
 def main():
-    data_path = sys.argv[1] if len(sys.argv) > 1 else "training_data.h5"
+    data_glob = sys.argv[1] if len(sys.argv) > 1 else "training_data.h5"
     model_path = sys.argv[2] if len(sys.argv) > 2 else "model.bin"
     epochs = int(sys.argv[3]) if len(sys.argv) > 3 else 50
 
-    print(f"Loading {data_path}...")
-    X, y = load_data(data_path)
+    print(f"Loading {data_glob}...")
+    X, y = load_data(data_glob)
     print(f"  {len(X)} positions, outcome distribution: "
           f"+1:{(y > 0).sum()}, 0:{(y == 0).sum()}, -1:{(y < 0).sum()}")
 
@@ -71,39 +74,41 @@ def main():
     split = int(n * 0.9)
     train_idx, val_idx = perm[:split], perm[split:]
 
-    X_train = torch.from_numpy(X[train_idx])
-    y_train = torch.from_numpy(y[train_idx])
-    X_val = torch.from_numpy(X[val_idx])
-    y_val = torch.from_numpy(y[val_idx])
-
-    train_ds = TensorDataset(X_train, y_train)
-    train_dl = DataLoader(train_ds, batch_size=1024, shuffle=True)
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Load everything onto GPU
+    X_train = torch.from_numpy(X[train_idx]).to(device)
+    y_train = torch.from_numpy(y[train_idx]).to(device)
+    X_val = torch.from_numpy(X[val_idx]).to(device)
+    y_val = torch.from_numpy(y[val_idx]).to(device)
+
     model = ChessnotMLP().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn = nn.MSELoss()
 
-    print(f"Training on {device} for {epochs} epochs...")
+    batch_size = 4096
+    n_train = len(X_train)
+
+    print(f"Training on {device} for {epochs} epochs ({n_train} train, {len(X_val)} val)...")
     best_val_loss = float("inf")
 
     for epoch in range(epochs):
         model.train()
+        perm = torch.randperm(n_train, device=device)
         train_loss = 0.0
-        for xb, yb in train_dl:
-            xb, yb = xb.to(device), yb.to(device)
-            pred = model(xb)
-            loss = loss_fn(pred, yb)
+        for i in range(0, n_train, batch_size):
+            idx = perm[i:i + batch_size]
+            pred = model(X_train[idx])
+            loss = loss_fn(pred, y_train[idx])
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            train_loss += loss.item() * len(xb)
-        train_loss /= len(X_train)
+            train_loss += loss.item() * len(idx)
+        train_loss /= n_train
 
         model.eval()
         with torch.no_grad():
-            val_pred = model(X_val.to(device))
-            val_loss = loss_fn(val_pred, y_val.to(device)).item()
+            val_loss = loss_fn(model(X_val), y_val).item()
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss

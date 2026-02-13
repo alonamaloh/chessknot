@@ -20,12 +20,10 @@ MLP::MLP(const std::string& path) {
   if (!in) throw std::runtime_error("cannot open model: " + path);
 
   // Read layers in order: weights then biases
-  w1_ = readFloats(in, 128 * 45);
-  b1_ = readFloats(in, 128);
-  w2_ = readFloats(in, 64 * 128);
-  b2_ = readFloats(in, 64);
-  w3_ = readFloats(in, 1 * 64);
-  b3_ = readFloats(in, 1);
+  w1_ = readFloats(in, 32 * 45);
+  b1_ = readFloats(in, 32);
+  w2_ = readFloats(in, 1 * 32);
+  b2_ = readFloats(in, 1);
 }
 
 int MLP::evaluate(const Board& board) const {
@@ -38,28 +36,19 @@ int MLP::evaluate(const Board& board) const {
   for (int i = 0; i < NUM_FEATURES; ++i)
     input[i] = counts[i] / 64.0f;
 
-  // Layer 1: 45 -> 128, ReLU
-  float h1[128];
-  for (int i = 0; i < 128; ++i) {
+  // Layer 1: 45 -> 32, ReLU
+  float h1[32];
+  for (int i = 0; i < 32; ++i) {
     float sum = b1_[i];
     for (int j = 0; j < 45; ++j)
       sum += w1_[i * 45 + j] * input[j];
     h1[i] = std::max(0.0f, sum);
   }
 
-  // Layer 2: 128 -> 64, ReLU
-  float h2[64];
-  for (int i = 0; i < 64; ++i) {
-    float sum = b2_[i];
-    for (int j = 0; j < 128; ++j)
-      sum += w2_[i * 128 + j] * h1[j];
-    h2[i] = std::max(0.0f, sum);
-  }
-
-  // Layer 3: 64 -> 1, tanh
-  float sum = b3_[0];
-  for (int j = 0; j < 64; ++j)
-    sum += w3_[j] * h2[j];
+  // Layer 2: 32 -> 1, tanh
+  float sum = b2_[0];
+  for (int j = 0; j < 32; ++j)
+    sum += w2_[j] * h1[j];
   float out = std::tanh(sum);
 
   // Scale to [-10000, +10000]

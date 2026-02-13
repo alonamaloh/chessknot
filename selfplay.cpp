@@ -199,23 +199,27 @@ int main(int argc, char* argv[]) {
   int flush_interval = 100;
   const char* output_file = "training_data.h5";
   const char* model_path = nullptr;
+  int eval_noise = 500;
 
   if (argc > 1 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
-    std::cout << "Usage: selfplay [num_games] [nodes_per_move] [output_file] [threads] [flush_interval] [-m model.bin]\n"
+    std::cout << "Usage: selfplay [num_games] [nodes_per_move] [output_file] [threads] [flush_interval] [-m model.bin] [-n noise]\n"
               << "  num_games      Number of self-play games (default: 1000)\n"
               << "  nodes_per_move Node limit per search (default: 10000)\n"
               << "  output_file    HDF5 output path (default: training_data.h5)\n"
               << "  threads        Number of threads (default: hardware concurrency)\n"
               << "  flush_interval Flush to disk every N games (default: 100)\n"
-              << "  -m model.bin   Use NN model for eval (default: random eval)\n";
+              << "  -m model.bin   Use NN model for eval (default: random eval)\n"
+              << "  -n noise       Eval noise amplitude (default: 500, 0 to disable)\n";
     return 0;
   }
 
-  // Parse positional args, then check for -m flag
+  // Parse positional args, then check for flags
   std::vector<std::string> positional;
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == "-m" && i + 1 < argc) {
       model_path = argv[++i];
+    } else if (std::string(argv[i]) == "-n" && i + 1 < argc) {
+      eval_noise = std::atoi(argv[++i]);
     } else {
       positional.push_back(argv[i]);
     }
@@ -237,8 +241,9 @@ int main(int argc, char* argv[]) {
 
   std::cout << "Self-play: " << num_games << " games, "
             << node_limit << " nodes/move, "
-            << num_threads << " threads, flush every "
-            << flush_interval << " games, output: " << output_file << std::endl;
+            << num_threads << " threads, noise=" << eval_noise
+            << ", flush every " << flush_interval
+            << " games, output: " << output_file << std::endl;
 
   std::uint64_t base_seed = 42;
   RandomBits seed_rng(base_seed);
@@ -264,11 +269,20 @@ int main(int argc, char* argv[]) {
 
       GameData gd;
       search::EvalFunc eval;
-      if (model)
-        eval = [&model](const Board& b) { return model->evaluate(b); };
-      else
+      if (model) {
+        if (eval_noise > 0) {
+          eval = [&model, &rng, eval_noise](const Board& b) {
+            int v = model->evaluate(b);
+            int noise = static_cast<int>(rng() % (2 * eval_noise + 1)) - eval_noise;
+            return std::clamp(v + noise, -10000, 10000);
+          };
+        } else {
+          eval = [&model](const Board& b) { return model->evaluate(b); };
+        }
+      } else {
         eval = makeRandomEval(seeds[game]);
-      int result = playGame(searcher, eval, rng, gd, node_limit, 10, 500);
+      }
+      int result = playGame(searcher, eval, rng, gd, node_limit, 20, 500);
 
       if (result > 0) total_wins++;
       else if (result < 0) total_losses++;

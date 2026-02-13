@@ -7,7 +7,7 @@
 
 namespace nn {
 
-// Simple MLP: 45 -> 128 (ReLU) -> 64 (ReLU) -> 1 (tanh)
+// Simple MLP: 45 -> 32 (ReLU) -> 1 (tanh)
 // Output scaled to [-10000, +10000] for use as search eval.
 class MLP {
 public:
@@ -18,10 +18,9 @@ public:
   int evaluate(const Board& board) const;
 
 private:
-  // Weights stored row-major: w1[128][45], w2[64][128], w3[1][64]
-  std::vector<float> w1_, b1_;  // 128x45, 128
-  std::vector<float> w2_, b2_;  // 64x128, 64
-  std::vector<float> w3_, b3_;  // 1x64, 1
+  // Weights stored row-major: w1[32][45], w2[1][32]
+  std::vector<float> w1_, b1_;  // 32x45, 32
+  std::vector<float> w2_, b2_;  // 1x32, 1
 };
 
 } // namespace nn
