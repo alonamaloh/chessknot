@@ -6,7 +6,7 @@ Input: 45 class counts normalized by /64
 Output: tanh, target is game outcome in {-1, 0, +1}
 Loss: MSE
 
-Usage: python train.py [data_glob] [output_model.bin] [epochs]
+Usage: python train.py [data_glob] [output_model.bin] [epochs] [max_samples]
 """
 
 import glob
@@ -39,7 +39,7 @@ def load_data(pattern):
     all_counts, all_outcome = [], []
     for path in paths:
         with h5py.File(path, "r") as f:
-            all_counts.append(f["class_counts"][:].astype(np.float32) / 64.0)
+            all_counts.append(f["class_counts"][:].astype(np.int8))
             all_outcome.append(f["outcome"][:].astype(np.float32))
         print(f"  {path}: {len(all_counts[-1])} positions")
     return np.concatenate(all_counts), np.concatenate(all_outcome)
@@ -62,6 +62,7 @@ def main():
     data_glob = sys.argv[1] if len(sys.argv) > 1 else "training_data.h5"
     model_path = sys.argv[2] if len(sys.argv) > 2 else "model.bin"
     epochs = int(sys.argv[3]) if len(sys.argv) > 3 else 50
+    max_samples = int(sys.argv[4]) if len(sys.argv) > 4 else 0
 
     print(f"Loading {data_glob}...")
     X, y = load_data(data_glob)
@@ -74,9 +75,18 @@ def main():
     split = int(n * 0.9)
     train_idx, val_idx = perm[:split], perm[split:]
 
+    if max_samples > 0:
+        max_train = int(max_samples * 0.9)
+        max_val = max_samples - max_train
+        if len(train_idx) > max_train:
+            train_idx = train_idx[:max_train]
+        if len(val_idx) > max_val:
+            val_idx = val_idx[:max_val]
+        print(f"  Subsampled to {len(train_idx)} train, {len(val_idx)} val")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load everything onto GPU
+    # Store counts as int8 on GPU (4x less memory); cast to float per batch
     X_train = torch.from_numpy(X[train_idx]).to(device)
     y_train = torch.from_numpy(y[train_idx]).to(device)
     X_val = torch.from_numpy(X[val_idx]).to(device)
@@ -98,7 +108,7 @@ def main():
         train_loss = 0.0
         for i in range(0, n_train, batch_size):
             idx = perm[i:i + batch_size]
-            pred = model(X_train[idx])
+            pred = model(X_train[idx].float() / 64.0)
             loss = loss_fn(pred, y_train[idx])
             optimizer.zero_grad()
             loss.backward()
@@ -108,7 +118,7 @@ def main():
 
         model.eval()
         with torch.no_grad():
-            val_loss = loss_fn(model(X_val), y_val).item()
+            val_loss = loss_fn(model(X_val.float() / 64.0), y_val).item()
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss

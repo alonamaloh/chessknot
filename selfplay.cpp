@@ -301,7 +301,7 @@ int main(int argc, char* argv[]) {
       } else {
         eval = makeRandomEval(seeds[game]);
       }
-      int result = playGame(searcher, eval, rng, gd, node_limit, 20, 500, class_counts);
+      int result = playGame(searcher, eval, rng, gd, node_limit, 4, 500, class_counts);
 
       if (result > 0) total_wins++;
       else if (result < 0) total_losses++;
