@@ -188,6 +188,16 @@ export class BoardUI {
             }
         }
 
+        // Draw lock icons on immovable pieces (checkers mode only)
+        if (!this.pieceMap) {
+            for (let square = 0; square < 64; square++) {
+                const wLocked = hasBit(this.lockedWhiteLo, this.lockedWhiteHi, square);
+                const bLocked = hasBit(this.lockedBlackLo, this.lockedBlackHi, square);
+                if (wLocked) this._drawLock(square, true);
+                if (bLocked) this._drawLock(square, false);
+            }
+        }
+
         // Draw legal move dots
         for (const target of this.legalTargets) {
             this._drawDot(target);
@@ -224,20 +234,21 @@ export class BoardUI {
             ? hasBit(this.lockedWhiteLo, this.lockedWhiteHi, square)
             : hasBit(this.lockedBlackLo, this.lockedBlackHi, square);
 
-        if (locked) {
-            this.ctx.save();
-            this.ctx.shadowColor = 'rgba(220, 20, 20, 1)';
-            this.ctx.shadowBlur = this.squareSize * 0.35;
-        }
-
         if (pieceType && PIECE_IMAGES[color][pieceType] && PIECE_IMAGES[color][pieceType].complete) {
+            // Chess piece mode: red glow for locked pieces
+            if (locked) {
+                this.ctx.save();
+                this.ctx.shadowColor = 'rgba(220, 20, 20, 1)';
+                this.ctx.shadowBlur = this.squareSize * 0.35;
+            }
             const padding = this.squareSize * 0.05;
             const size = this.squareSize - padding * 2;
             // Draw twice when locked to intensify the glow
             if (locked) this.ctx.drawImage(PIECE_IMAGES[color][pieceType], x + padding, y + padding, size, size);
             this.ctx.drawImage(PIECE_IMAGES[color][pieceType], x + padding, y + padding, size, size);
+            if (locked) this.ctx.restore();
         } else {
-            // Fallback: colored circle
+            // Checkers mode: plain circle, lock icon drawn separately
             const cx = x + this.squareSize / 2;
             const cy = y + this.squareSize / 2;
             const radius = this.squareSize * 0.4;
@@ -263,8 +274,58 @@ export class BoardUI {
             ctx.lineWidth = 2;
             ctx.stroke();
         }
+    }
 
-        if (locked) this.ctx.restore();
+    _drawLock(square, isWhitePiece) {
+        const rank = Math.floor(square / 8);
+        const file = square % 8;
+        const displayRank = this.flipped ? rank : 7 - rank;
+        const displayFile = this.flipped ? 7 - file : file;
+        const cx = displayFile * this.squareSize + this.squareSize / 2;
+        const cy = displayRank * this.squareSize + this.squareSize / 2;
+
+        const ctx = this.ctx;
+        const s = this.squareSize * 0.18;
+
+        // Position: bottom-right of the square center
+        const lx = cx + this.squareSize * 0.12;
+        const ly = cy + this.squareSize * 0.10;
+
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+
+        const color = isWhitePiece ? '#444' : '#ddd';
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+
+        // Lock body (rounded rectangle)
+        const bw = s * 1.1;
+        const bh = s * 0.85;
+        const bx = lx - bw / 2;
+        const by = ly - bh * 0.2;
+        const br = s * 0.15;
+
+        ctx.beginPath();
+        ctx.moveTo(bx + br, by);
+        ctx.lineTo(bx + bw - br, by);
+        ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + br);
+        ctx.lineTo(bx + bw, by + bh - br);
+        ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - br, by + bh);
+        ctx.lineTo(bx + br, by + bh);
+        ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - br);
+        ctx.lineTo(bx, by + br);
+        ctx.quadraticCurveTo(bx, by, bx + br, by);
+        ctx.closePath();
+        ctx.fill();
+
+        // Shackle (arc on top)
+        ctx.beginPath();
+        ctx.lineWidth = s * 0.25;
+        ctx.lineCap = 'round';
+        ctx.arc(lx, by, s * 0.35, Math.PI, 0);
+        ctx.stroke();
+
+        ctx.restore();
     }
 
     _drawDot(square) {
