@@ -53,7 +53,12 @@ struct FixedVector {
 };
 
 // 16 pieces * 4 wazir directions = 64 max moves
+// Rook sliding can reach up to ~14 squares per piece
+#ifdef ROOK_MOVES
+using MoveList = FixedVector<Move, 256>;
+#else
 using MoveList = FixedVector<Move, 64>;
+#endif
 
 // Board state: white is always the side to move.
 // After each move we swap white and black.
