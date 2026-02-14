@@ -28,7 +28,7 @@ async function init() {
         // Load NN model
         updateLoadingStatus('Loading neural network...');
         try {
-            const response = await fetch(new URL('./model_good.bin', import.meta.url));
+            const response = await fetch('./model_good.bin');
             if (response.ok) {
                 const buffer = await response.arrayBuffer();
                 await engine.loadNNModel(new Uint8Array(buffer));

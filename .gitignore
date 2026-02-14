@@ -4,5 +4,6 @@ test_search
 selfplay
 *.bin
 !web/site/model_good.bin
+!web/site/*/model_good.bin
 *.h5
 *.policy
