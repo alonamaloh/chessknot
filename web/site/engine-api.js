@@ -16,9 +16,16 @@ export class EngineAPI {
     }
 
     async init(distBase) {
-        const workerUrl = new URL(`./engine-worker.js${_q}`, import.meta.url).href;
+        // Fetch worker script and create Blob URL to avoid COEP issues
+        // when the worker JS lives in a different directory than the page
+        const workerScriptUrl = new URL(`./engine-worker.js${_q}`, import.meta.url).href;
+        const resp = await fetch(workerScriptUrl);
+        const workerCode = await resp.text();
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        const blobUrl = URL.createObjectURL(blob);
+
         return new Promise((resolve, reject) => {
-            this.worker = new Worker(workerUrl);
+            this.worker = new Worker(blobUrl);
 
             this.worker.onmessage = (e) => {
                 const { id, type, ...data } = e.data;
