@@ -21,11 +21,13 @@ const PIECE_COLORS = ['w', 'b'];
 let _piecesLoaded = 0;
 let _onPiecesLoaded = null;
 
+const _piecesBase = new URL('./pieces/', import.meta.url).href;
+
 for (const color of PIECE_COLORS) {
     PIECE_IMAGES[color] = {};
     for (const type of PIECE_TYPES) {
         const img = new Image();
-        img.src = `pieces/${color}${type}.svg`;
+        img.src = `${_piecesBase}${color}${type}.svg`;
         img.onload = () => { if (++_piecesLoaded === 12 && _onPiecesLoaded) _onPiecesLoaded(); };
         PIECE_IMAGES[color][type] = img;
     }

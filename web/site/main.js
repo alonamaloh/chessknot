@@ -21,13 +21,14 @@ async function init() {
 
     try {
         updateLoadingStatus('Starting engine...');
+        const distBase = new URL('./dist/', window.location.href).href;
         const engine = getEngine();
-        await engine.init();
+        await engine.init(distBase);
 
         // Load NN model
         updateLoadingStatus('Loading neural network...');
         try {
-            const response = await fetch('./model_good.bin');
+            const response = await fetch(new URL('./model_good.bin', import.meta.url));
             if (response.ok) {
                 const buffer = await response.arrayBuffer();
                 await engine.loadNNModel(new Uint8Array(buffer));

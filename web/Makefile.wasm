@@ -20,8 +20,6 @@ WASM_LDFLAGS = \
 
 SRCDIR = ..
 WEBDIR = .
-DISTDIR = $(WEBDIR)/dist
-OBJDIR = $(WEBDIR)/obj
 
 CORE_SRCS = \
     $(SRCDIR)/core/board.cpp \
@@ -37,101 +35,71 @@ NN_SRCS = \
 WASM_SRCS = \
     $(WEBDIR)/src/wasm/bindings.cpp
 
-ALL_SRCS = $(CORE_SRCS) $(SEARCH_SRCS) $(NN_SRCS) $(WASM_SRCS)
+# --- Helper to define a variant build ---
+# $(1) = variant name, $(2) = extra CXXFLAGS, $(3) = site deploy dir
+define VARIANT_template
 
-OBJS = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(CORE_SRCS) $(SEARCH_SRCS) $(NN_SRCS))
-OBJS += $(patsubst $(WEBDIR)/%.cpp,$(OBJDIR)/%.o,$(WASM_SRCS))
+$(1)_OBJDIR  = $$(WEBDIR)/obj-$(1)
+$(1)_DISTDIR = $$(WEBDIR)/dist-$(1)
+$(1)_CXXFLAGS = $$(WASM_CXXFLAGS) $(2)
+$(1)_SITEDIST = $$(WEBDIR)/site/$(3)/dist
 
-WASM_OUT = $(DISTDIR)/engine.js
+$(1)_OBJS = $$(patsubst $$(SRCDIR)/%.cpp,$$($(1)_OBJDIR)/%.o,$$(CORE_SRCS) $$(SEARCH_SRCS) $$(NN_SRCS))
+$(1)_OBJS += $$(patsubst $$(WEBDIR)/%.cpp,$$($(1)_OBJDIR)/%.o,$$(WASM_SRCS))
 
-SITEDIST = $(WEBDIR)/site/dist
+$(1)_WASM_OUT = $$($(1)_DISTDIR)/engine.js
 
-all: dirs $(WASM_OUT) deploy rook-dirs $(ROOK_WASM_OUT) rook-deploy chessknot-deploy
+$(1): $(1)-dirs $$($(1)_WASM_OUT) $(1)-deploy
 
-dirs:
-	@mkdir -p $(DISTDIR)
-	@mkdir -p $(OBJDIR)/core
-	@mkdir -p $(OBJDIR)/search
-	@mkdir -p $(OBJDIR)/nn
-	@mkdir -p $(OBJDIR)/src/wasm
+$(1)-dirs:
+	@mkdir -p $$($(1)_DISTDIR)
+	@mkdir -p $$($(1)_OBJDIR)/core
+	@mkdir -p $$($(1)_OBJDIR)/search
+	@mkdir -p $$($(1)_OBJDIR)/nn
+	@mkdir -p $$($(1)_OBJDIR)/src/wasm
 
-$(WASM_OUT): $(OBJS)
-	$(EMCXX) $(WASM_CXXFLAGS) $(WASM_LDFLAGS) -o $@ $^
-	@echo "Built: $(WASM_OUT)"
-	@ls -lh $(DISTDIR)/engine.*
+$$($(1)_WASM_OUT): $$($(1)_OBJS)
+	$$(EMCXX) $$($(1)_CXXFLAGS) $$(WASM_LDFLAGS) -o $$@ $$^
+	@echo "Built: $$($(1)_WASM_OUT)"
+	@ls -lh $$($(1)_DISTDIR)/engine.*
 
-$(OBJDIR)/core/%.o: $(SRCDIR)/core/%.cpp
-	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+$$($(1)_OBJDIR)/core/%.o: $$(SRCDIR)/core/%.cpp
+	$$(EMCXX) $$($(1)_CXXFLAGS) -c $$< -o $$@
 
-$(OBJDIR)/search/%.o: $(SRCDIR)/search/%.cpp
-	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+$$($(1)_OBJDIR)/search/%.o: $$(SRCDIR)/search/%.cpp
+	$$(EMCXX) $$($(1)_CXXFLAGS) -c $$< -o $$@
 
-$(OBJDIR)/nn/%.o: $(SRCDIR)/nn/%.cpp
-	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+$$($(1)_OBJDIR)/nn/%.o: $$(SRCDIR)/nn/%.cpp
+	$$(EMCXX) $$($(1)_CXXFLAGS) -c $$< -o $$@
 
-$(OBJDIR)/src/wasm/%.o: $(WEBDIR)/src/wasm/%.cpp FORCE
-	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+$$($(1)_OBJDIR)/src/wasm/%.o: $$(WEBDIR)/src/wasm/%.cpp FORCE
+	$$(EMCXX) $$($(1)_CXXFLAGS) -c $$< -o $$@
+
+$(1)-deploy: $$($(1)_WASM_OUT)
+	@mkdir -p $$($(1)_SITEDIST)
+	cp $$($(1)_DISTDIR)/engine.js $$($(1)_SITEDIST)/
+	cp $$($(1)_DISTDIR)/engine.wasm $$($(1)_SITEDIST)/
+	@echo "Deployed to $$($(1)_SITEDIST)/"
+
+endef
+
+# ChessKnot (default, no flag) — pieces move to any empty square
+$(eval $(call VARIANT_template,chessknot,,chessknot))
+
+# WazirKnot — pieces move 1 step orthogonal
+$(eval $(call VARIANT_template,wazirknot,-DWAZIR_MOVES,wazirknot))
+
+# RookKnot — pieces slide along ranks/files
+$(eval $(call VARIANT_template,rookknot,-DROOK_MOVES,rookknot))
+
+all: chessknot wazirknot rookknot
 
 FORCE:
 
-deploy: $(WASM_OUT)
-	@mkdir -p $(SITEDIST)
-	cp $(DISTDIR)/engine.js $(SITEDIST)/
-	cp $(DISTDIR)/engine.wasm $(SITEDIST)/
-	@echo "Deployed to $(SITEDIST)/"
-
-# --- RookKnot variant (rook sliding moves) ---
-
-ROOK_OBJDIR = $(WEBDIR)/obj-rook
-ROOK_DISTDIR = $(WEBDIR)/dist-rook
-ROOK_CXXFLAGS = $(WASM_CXXFLAGS) -DROOK_MOVES
-
-ROOK_OBJS = $(patsubst $(SRCDIR)/%.cpp,$(ROOK_OBJDIR)/%.o,$(CORE_SRCS) $(SEARCH_SRCS) $(NN_SRCS))
-ROOK_OBJS += $(patsubst $(WEBDIR)/%.cpp,$(ROOK_OBJDIR)/%.o,$(WASM_SRCS))
-
-ROOK_WASM_OUT = $(ROOK_DISTDIR)/engine.js
-ROOK_SITEDIST = $(WEBDIR)/site/rookknot/dist
-
-rookknot: rook-dirs $(ROOK_WASM_OUT) rook-deploy
-
-rook-dirs:
-	@mkdir -p $(ROOK_DISTDIR)
-	@mkdir -p $(ROOK_OBJDIR)/core
-	@mkdir -p $(ROOK_OBJDIR)/search
-	@mkdir -p $(ROOK_OBJDIR)/nn
-	@mkdir -p $(ROOK_OBJDIR)/src/wasm
-
-$(ROOK_WASM_OUT): $(ROOK_OBJS)
-	$(EMCXX) $(ROOK_CXXFLAGS) $(WASM_LDFLAGS) -o $@ $^
-	@echo "Built: $(ROOK_WASM_OUT)"
-	@ls -lh $(ROOK_DISTDIR)/engine.*
-
-$(ROOK_OBJDIR)/core/%.o: $(SRCDIR)/core/%.cpp
-	$(EMCXX) $(ROOK_CXXFLAGS) -c $< -o $@
-
-$(ROOK_OBJDIR)/search/%.o: $(SRCDIR)/search/%.cpp
-	$(EMCXX) $(ROOK_CXXFLAGS) -c $< -o $@
-
-$(ROOK_OBJDIR)/nn/%.o: $(SRCDIR)/nn/%.cpp
-	$(EMCXX) $(ROOK_CXXFLAGS) -c $< -o $@
-
-$(ROOK_OBJDIR)/src/wasm/%.o: $(WEBDIR)/src/wasm/%.cpp FORCE
-	$(EMCXX) $(ROOK_CXXFLAGS) -c $< -o $@
-
-rook-deploy: $(ROOK_WASM_OUT)
-	@mkdir -p $(ROOK_SITEDIST)
-	cp $(ROOK_DISTDIR)/engine.js $(ROOK_SITEDIST)/
-	cp $(ROOK_DISTDIR)/engine.wasm $(ROOK_SITEDIST)/
-	@echo "Deployed to $(ROOK_SITEDIST)/"
-
-# Root ChessKnot site uses rook-sliding engine
-chessknot-deploy: $(ROOK_WASM_OUT)
-	@mkdir -p $(SITEDIST)
-	cp $(ROOK_DISTDIR)/engine.js $(SITEDIST)/
-	cp $(ROOK_DISTDIR)/engine.wasm $(SITEDIST)/
-	@echo "Deployed rook engine to $(SITEDIST)/"
-
 clean:
-	rm -rf $(OBJDIR) $(DISTDIR) $(SITEDIST) $(ROOK_OBJDIR) $(ROOK_DISTDIR) $(ROOK_SITEDIST)
+	rm -rf $(WEBDIR)/obj-* $(WEBDIR)/dist-*
 
-.PHONY: all dirs clean deploy rookknot rook-dirs rook-deploy chessknot-deploy FORCE
+.PHONY: all clean chessknot wazirknot rookknot FORCE \
+        chessknot-dirs chessknot-deploy \
+        wazirknot-dirs wazirknot-deploy \
+        rookknot-dirs rookknot-deploy

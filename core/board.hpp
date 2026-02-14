@@ -52,12 +52,15 @@ struct FixedVector {
   const T* end() const { return data + count; }
 };
 
-// 16 pieces * 4 wazir directions = 64 max moves
-// Rook sliding can reach up to ~14 squares per piece
-#ifdef ROOK_MOVES
+// ChessKnot (any square): 16 pieces * 32 empty squares = 512
+// RookKnot (rook sliding): 16 pieces * ~14 squares = 256
+// WazirKnot (1-step orthogonal): 16 pieces * 4 directions = 64
+#if defined(ROOK_MOVES)
 using MoveList = FixedVector<Move, 256>;
-#else
+#elif defined(WAZIR_MOVES)
 using MoveList = FixedVector<Move, 64>;
+#else
+using MoveList = FixedVector<Move, 512>;
 #endif
 
 // Board state: white is always the side to move.

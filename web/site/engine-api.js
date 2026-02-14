@@ -15,9 +15,10 @@ export class EngineAPI {
         this.onError = null;
     }
 
-    async init(workerPath = `./engine-worker.js${_q}`) {
+    async init(distBase) {
+        const workerUrl = new URL(`./engine-worker.js${_q}`, import.meta.url).href;
         return new Promise((resolve, reject) => {
-            this.worker = new Worker(workerPath);
+            this.worker = new Worker(workerUrl);
 
             this.worker.onmessage = (e) => {
                 const { id, type, ...data } = e.data;
@@ -51,6 +52,9 @@ export class EngineAPI {
                 if (this.onError) this.onError(err.message);
                 reject(err);
             };
+
+            // Tell worker where to find the engine WASM
+            this.worker.postMessage({ type: 'init', data: { distBase } });
         });
     }
 

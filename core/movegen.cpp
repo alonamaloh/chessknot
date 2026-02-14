@@ -34,8 +34,8 @@ std::size_t generateMoves(const Board& board, MoveList& moves) {
     // Source enemy neighbor count
     int srcCount = ((H >> sq) & 1) * 4 + ((M >> sq) & 1) * 2 + ((L >> sq) & 1);
 
-#ifdef ROOK_MOVES
-    // Rook sliding: cast rays in 4 orthogonal directions
+#if defined(ROOK_MOVES)
+    // RookKnot: slide along ranks/files
     int file = sq & 7;
     int rank = sq >> 3;
 
@@ -71,8 +71,9 @@ std::size_t generateMoves(const Board& board, MoveList& moves) {
       if (dstCount >= srcCount)
         moves.push_back(Move(sq, tsq));
     }
-#else
-    // Wazir: try 4 orthogonal neighbors
+
+#elif defined(WAZIR_MOVES)
+    // WazirKnot: 1-step orthogonal
     Bb empty = board.empty();
     int file = sq & 7;
     int targets[4];
@@ -88,6 +89,17 @@ std::size_t generateMoves(const Board& board, MoveList& moves) {
       Bb tBit = 1ULL << tsq;
       if (!(tBit & empty)) continue;
 
+      int dstCount = ((H >> tsq) & 1) * 4 + ((M >> tsq) & 1) * 2 + ((L >> tsq) & 1);
+      if (dstCount >= srcCount)
+        moves.push_back(Move(sq, tsq));
+    }
+
+#else
+    // ChessKnot: any empty square
+    Bb empties = board.empty();
+    while (empties) {
+      int tsq = __builtin_ctzll(empties);
+      empties &= empties - 1;
       int dstCount = ((H >> tsq) & 1) * 4 + ((M >> tsq) & 1) * 2 + ((L >> tsq) & 1);
       if (dstCount >= srcCount)
         moves.push_back(Move(sq, tsq));

@@ -2,19 +2,16 @@
  * Web Worker for the ChessKnot engine
  */
 
-const _workerV = new URL(self.location.href).searchParams.get('v') || '';
-const _workerQ = _workerV ? `?v=${_workerV}` : '';
-
-importScripts(`./dist/engine.js${_workerQ}`);
-
 let engine = null;
 let board = null;
 let isReady = false;
 
-async function init() {
+async function init(distBase) {
+    distBase = distBase || './dist/';
     try {
+        importScripts(`${distBase}engine.js`);
         engine = await ChessKnotEngine({
-            locateFile: (path) => `./dist/${path}${_workerQ}`
+            locateFile: (path) => `${distBase}${path}`
         });
 
         const version = engine.getEngineVersion();
@@ -95,7 +92,7 @@ self.onmessage = function(e) {
     try {
         switch (type) {
             case 'init':
-                init();
+                init(data && data.distBase);
                 return;
 
             case 'loadNNModel':
@@ -149,5 +146,3 @@ self.onmessage = function(e) {
 
     postMessage(response);
 };
-
-init();
