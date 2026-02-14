@@ -46,7 +46,7 @@ WASM_OUT = $(DISTDIR)/engine.js
 
 SITEDIST = $(WEBDIR)/site/dist
 
-all: dirs $(WASM_OUT) deploy
+all: dirs $(WASM_OUT) deploy rook-dirs $(ROOK_WASM_OUT) rook-deploy chessknot-deploy
 
 dirs:
 	@mkdir -p $(DISTDIR)
@@ -124,7 +124,14 @@ rook-deploy: $(ROOK_WASM_OUT)
 	cp $(ROOK_DISTDIR)/engine.wasm $(ROOK_SITEDIST)/
 	@echo "Deployed to $(ROOK_SITEDIST)/"
 
+# Root ChessKnot site uses rook-sliding engine
+chessknot-deploy: $(ROOK_WASM_OUT)
+	@mkdir -p $(SITEDIST)
+	cp $(ROOK_DISTDIR)/engine.js $(SITEDIST)/
+	cp $(ROOK_DISTDIR)/engine.wasm $(SITEDIST)/
+	@echo "Deployed rook engine to $(SITEDIST)/"
+
 clean:
 	rm -rf $(OBJDIR) $(DISTDIR) $(SITEDIST) $(ROOK_OBJDIR) $(ROOK_DISTDIR) $(ROOK_SITEDIST)
 
-.PHONY: all dirs clean deploy rookknot rook-dirs rook-deploy FORCE
+.PHONY: all dirs clean deploy rookknot rook-dirs rook-deploy chessknot-deploy FORCE
