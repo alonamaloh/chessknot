@@ -3,8 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>ChessKnot</title>
-    <link rel="stylesheet" href="style.css">
+    <link id="main-css" rel="stylesheet">
+    <script>document.getElementById('main-css').href = 'style.css?v=' + Date.now();</script>
     <script src="coi-serviceworker.js"></script>
 </head>
 <body>
@@ -74,6 +78,6 @@
         </footer>
     </div>
 
-    <script type="module" src="main.js"></script>
+    <script type="module">import('./main.js?v=' + Date.now());</script>
 </body>
 </html>

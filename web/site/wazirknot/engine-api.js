@@ -2,6 +2,9 @@
  * Main thread API for communicating with the ChessKnot engine Web Worker
  */
 
+const _v = new URL(import.meta.url).searchParams.get('v') || '';
+const _q = _v ? `?v=${_v}` : '';
+
 export class EngineAPI {
     constructor() {
         this.worker = null;
@@ -12,7 +15,7 @@ export class EngineAPI {
         this.onError = null;
     }
 
-    async init(workerPath = './engine-worker.js') {
+    async init(workerPath = `./engine-worker.js${_q}`) {
         return new Promise((resolve, reject) => {
             this.worker = new Worker(workerPath);
 

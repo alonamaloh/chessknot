@@ -2,7 +2,10 @@
  * Web Worker for the ChessKnot engine
  */
 
-importScripts('./dist/engine.js');
+const _workerV = new URL(self.location.href).searchParams.get('v') || '';
+const _workerQ = _workerV ? `?v=${_workerV}` : '';
+
+importScripts(`./dist/engine.js${_workerQ}`);
 
 let engine = null;
 let board = null;
@@ -11,7 +14,7 @@ let isReady = false;
 async function init() {
     try {
         engine = await ChessKnotEngine({
-            locateFile: (path) => `./dist/${path}`
+            locateFile: (path) => `./dist/${path}${_workerQ}`
         });
 
         const version = engine.getEngineVersion();

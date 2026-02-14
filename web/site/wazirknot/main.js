@@ -2,8 +2,11 @@
  * Main entry point for the ChessKnot web app
  */
 
-import { GameController } from './game-controller.js';
-import { getEngine } from './engine-api.js';
+const _v = new URL(import.meta.url).searchParams.get('v') || '';
+const _q = _v ? `?v=${_v}` : '';
+
+const { GameController } = await import(`./game-controller.js${_q}`);
+const { getEngine } = await import(`./engine-api.js${_q}`);
 
 let gameController = null;
 
