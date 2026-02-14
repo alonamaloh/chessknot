@@ -224,13 +224,15 @@ export class BoardUI {
 
         if (locked) {
             this.ctx.save();
-            this.ctx.shadowColor = 'rgba(200, 30, 30, 0.85)';
-            this.ctx.shadowBlur = this.squareSize * 0.2;
+            this.ctx.shadowColor = 'rgba(220, 20, 20, 1)';
+            this.ctx.shadowBlur = this.squareSize * 0.35;
         }
 
         if (pieceType && PIECE_IMAGES[color][pieceType] && PIECE_IMAGES[color][pieceType].complete) {
             const padding = this.squareSize * 0.05;
             const size = this.squareSize - padding * 2;
+            // Draw twice when locked to intensify the glow
+            if (locked) this.ctx.drawImage(PIECE_IMAGES[color][pieceType], x + padding, y + padding, size, size);
             this.ctx.drawImage(PIECE_IMAGES[color][pieceType], x + padding, y + padding, size, size);
         } else {
             // Fallback: colored circle
