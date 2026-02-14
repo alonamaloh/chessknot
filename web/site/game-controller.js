@@ -103,6 +103,13 @@ export class GameController {
     }
 
     _generatePieceMap(board) {
+        // Use checkers-style circles unless chess pieces are enabled
+        if (!window._chessKnotConfig?.chessPieces) {
+            this.pieceMap = new Array(64).fill(null);
+            this.initialPieceMap = [...this.pieceMap];
+            this.boardUI.setPieceMap(null);
+            return;
+        }
         this.pieceMap = new Array(64).fill(null);
         const whiteSqs = [];
         const blackSqs = [];
