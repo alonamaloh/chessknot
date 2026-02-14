@@ -6,6 +6,21 @@ const _v = new URL(import.meta.url).searchParams.get('v') || '';
 const _q = _v ? `?v=${_v}` : '';
 const { BoardUI } = await import(`./board-ui.js${_q}`);
 
+function hasBit(lo, hi, sq) {
+    if (sq < 32) return (lo & (1 << sq)) !== 0;
+    return (hi & (1 << (sq - 32))) !== 0;
+}
+
+function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
+const PIECE_SET = ['K','Q','R','R','B','B','N','N','P','P','P','P','P','P','P','P'];
+
 export class GameController {
     constructor(canvas, engine, statusElement = null) {
         this.boardUI = new BoardUI(canvas);
@@ -21,6 +36,10 @@ export class GameController {
         this.humanColor = 'white';  // 'white', 'black', or 'both'
         this.secondsPerMove = 3.0;
         this.autoPlay = true;
+
+        // Piece identity tracking (cosmetic)
+        this.pieceMap = new Array(64).fill(null);
+        this.initialPieceMap = new Array(64).fill(null);
 
         // State flags
         this.isThinking = false;
@@ -77,9 +96,26 @@ export class GameController {
         this.boardUI.clearLastMove();
 
         const board = await this.engine.resetBoard();
+        this._generatePieceMap(board);
         this._updateFromBoard(board);
         await this._updateLegalMoves();
         this._updateStatus('New game');
+    }
+
+    _generatePieceMap(board) {
+        this.pieceMap = new Array(64).fill(null);
+        const whiteSqs = [];
+        const blackSqs = [];
+        for (let sq = 0; sq < 64; sq++) {
+            if (hasBit(board.whiteLo, board.whiteHi, sq)) whiteSqs.push(sq);
+            if (hasBit(board.blackLo, board.blackHi, sq)) blackSqs.push(sq);
+        }
+        const wSet = shuffle([...PIECE_SET]);
+        const bSet = shuffle([...PIECE_SET]);
+        for (let i = 0; i < whiteSqs.length; i++) this.pieceMap[whiteSqs[i]] = wSet[i];
+        for (let i = 0; i < blackSqs.length; i++) this.pieceMap[blackSqs[i]] = bSet[i];
+        this.initialPieceMap = [...this.pieceMap];
+        this.boardUI.setPieceMap(this.pieceMap);
     }
 
     _updateFromBoard(board) {
@@ -175,6 +211,9 @@ export class GameController {
         this.history.push({ board: { ...prevBoard }, from, to });
 
         const newBoard = await this.engine.makeMove(from, to);
+        this.pieceMap[to] = this.pieceMap[from];
+        this.pieceMap[from] = null;
+        this.boardUI.setPieceMap(this.pieceMap);
         this._updateFromBoard(newBoard);
         this.boardUI.setSelected(null);
         this.boardUI.setLegalTargets([]);
@@ -279,6 +318,9 @@ export class GameController {
         this.history.push(entry);
 
         const newBoard = await this.engine.makeMove(entry.from, entry.to);
+        this.pieceMap[entry.to] = this.pieceMap[entry.from];
+        this.pieceMap[entry.from] = null;
+        this.boardUI.setPieceMap(this.pieceMap);
         this._updateFromBoard(newBoard);
         this.boardUI.setSelected(null);
         this.boardUI.setLegalTargets([]);
@@ -296,9 +338,13 @@ export class GameController {
 
     async _replayHistory() {
         await this.engine.resetBoard();
+        this.pieceMap = [...this.initialPieceMap];
         for (const entry of this.history) {
             await this.engine.makeMove(entry.from, entry.to);
+            this.pieceMap[entry.to] = this.pieceMap[entry.from];
+            this.pieceMap[entry.from] = null;
         }
+        this.boardUI.setPieceMap(this.pieceMap);
         const board = await this.engine.getBoard();
         this._updateFromBoard(board);
         this.boardUI.setSelected(null);

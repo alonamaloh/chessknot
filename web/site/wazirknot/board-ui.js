@@ -14,6 +14,8 @@ function hasBit(lo, hi, sq) {
     return (hi & (1 << (sq - 32))) !== 0;
 }
 
+const PIECE_UNICODE = { K: '\u265A', Q: '\u265B', R: '\u265C', B: '\u265D', N: '\u265E', P: '\u265F' };
+
 export class BoardUI {
     constructor(canvas) {
         this.canvas = canvas;
@@ -33,6 +35,7 @@ export class BoardUI {
         this.legalTargets = [];        // Squares this piece can move to
         this.lastMove = null;          // { from, to }
         this.flipped = false;
+        this.pieceMap = null;       // Array(64) of piece type letters, or null
 
         // Locked pieces (no legal moves) — bitboards in game perspective
         this.lockedWhiteLo = 0;
@@ -101,6 +104,11 @@ export class BoardUI {
         this.lockedWhiteHi = wHi >>> 0;
         this.lockedBlackLo = bLo >>> 0;
         this.lockedBlackHi = bHi >>> 0;
+        this.render();
+    }
+
+    setPieceMap(map) {
+        this.pieceMap = map || null;
         this.render();
     }
 
@@ -197,30 +205,47 @@ export class BoardUI {
         const displayFile = this.flipped ? 7 - file : file;
         const x = displayFile * this.squareSize + this.squareSize / 2;
         const y = displayRank * this.squareSize + this.squareSize / 2;
-        const radius = this.squareSize * 0.4;
 
         const ctx = this.ctx;
+        const pieceType = this.pieceMap && this.pieceMap[square];
 
-        // Draw piece body (colored circle)
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        if (pieceType) {
+            // Draw Unicode chess symbol
+            const ch = PIECE_UNICODE[pieceType];
+            const fontSize = this.squareSize * 0.85;
+            ctx.font = `${fontSize}px serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
 
-        if (isWhite) {
-            const grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
-            grad.addColorStop(0, '#fff');
-            grad.addColorStop(1, '#ccc');
-            ctx.fillStyle = grad;
+            // Stroke outline first, then fill
+            ctx.lineWidth = isWhite ? 1.5 : 0.5;
+            ctx.strokeStyle = isWhite ? '#333' : '#000';
+            ctx.strokeText(ch, x, y);
+            ctx.fillStyle = isWhite ? '#fff' : '#333';
+            ctx.fillText(ch, x, y);
         } else {
-            const grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
-            grad.addColorStop(0, '#555');
-            grad.addColorStop(1, '#222');
-            ctx.fillStyle = grad;
-        }
-        ctx.fill();
+            // Fallback: colored circle
+            const radius = this.squareSize * 0.4;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
 
-        ctx.strokeStyle = isWhite ? this.colors.whitePieceStroke : this.colors.blackPieceStroke;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+            if (isWhite) {
+                const grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
+                grad.addColorStop(0, '#fff');
+                grad.addColorStop(1, '#ccc');
+                ctx.fillStyle = grad;
+            } else {
+                const grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
+                grad.addColorStop(0, '#555');
+                grad.addColorStop(1, '#222');
+                ctx.fillStyle = grad;
+            }
+            ctx.fill();
+
+            ctx.strokeStyle = isWhite ? this.colors.whitePieceStroke : this.colors.blackPieceStroke;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
     }
 
     _drawDot(square) {
