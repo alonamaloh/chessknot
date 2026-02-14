@@ -189,7 +189,7 @@ export class BoardUI {
         }
 
         // Draw lock icons on immovable pieces (checkers mode only)
-        if (!this.pieceMap) {
+        if (!window._chessKnotConfig?.chessPieces) {
             for (let square = 0; square < 64; square++) {
                 const wLocked = hasBit(this.lockedWhiteLo, this.lockedWhiteHi, square);
                 const bLocked = hasBit(this.lockedBlackLo, this.lockedBlackHi, square);
