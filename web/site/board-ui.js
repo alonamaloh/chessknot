@@ -14,7 +14,22 @@ function hasBit(lo, hi, sq) {
     return (hi & (1 << (sq - 32))) !== 0;
 }
 
-const PIECE_UNICODE = { K: '\u265A', Q: '\u265B', R: '\u265C', B: '\u265D', N: '\u265E', P: '\u265F' };
+// Preload piece SVG images (Cburnett set, CC BY-SA 3.0)
+const PIECE_IMAGES = {};
+const PIECE_TYPES = ['K', 'Q', 'R', 'B', 'N', 'P'];
+const PIECE_COLORS = ['w', 'b'];
+let _piecesLoaded = 0;
+let _onPiecesLoaded = null;
+
+for (const color of PIECE_COLORS) {
+    PIECE_IMAGES[color] = {};
+    for (const type of PIECE_TYPES) {
+        const img = new Image();
+        img.src = `pieces/${color}${type}.svg`;
+        img.onload = () => { if (++_piecesLoaded === 12 && _onPiecesLoaded) _onPiecesLoaded(); };
+        PIECE_IMAGES[color][type] = img;
+    }
+}
 
 export class BoardUI {
     constructor(canvas) {
@@ -36,6 +51,9 @@ export class BoardUI {
         this.lastMove = null;          // { from, to }
         this.flipped = false;
         this.pieceMap = null;       // Array(64) of piece type letters, or null
+
+        // Re-render once all piece images are loaded
+        if (_piecesLoaded < 12) _onPiecesLoaded = () => this.render();
 
         // Locked pieces (no legal moves) — bitboards in game perspective
         this.lockedWhiteLo = 0;
@@ -203,39 +221,33 @@ export class BoardUI {
         const file = square % 8;
         const displayRank = this.flipped ? rank : 7 - rank;
         const displayFile = this.flipped ? 7 - file : file;
-        const x = displayFile * this.squareSize + this.squareSize / 2;
-        const y = displayRank * this.squareSize + this.squareSize / 2;
+        const x = displayFile * this.squareSize;
+        const y = displayRank * this.squareSize;
 
-        const ctx = this.ctx;
         const pieceType = this.pieceMap && this.pieceMap[square];
+        const color = isWhite ? 'w' : 'b';
 
-        if (pieceType) {
-            // Draw Unicode chess symbol
-            const ch = PIECE_UNICODE[pieceType];
-            const fontSize = this.squareSize * 0.85;
-            ctx.font = `${fontSize}px serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-
-            // Stroke outline first, then fill
-            ctx.lineWidth = isWhite ? 1.5 : 0.5;
-            ctx.strokeStyle = isWhite ? '#333' : '#000';
-            ctx.strokeText(ch, x, y);
-            ctx.fillStyle = isWhite ? '#fff' : '#333';
-            ctx.fillText(ch, x, y);
+        if (pieceType && PIECE_IMAGES[color][pieceType] && PIECE_IMAGES[color][pieceType].complete) {
+            const padding = this.squareSize * 0.05;
+            const size = this.squareSize - padding * 2;
+            this.ctx.drawImage(PIECE_IMAGES[color][pieceType], x + padding, y + padding, size, size);
         } else {
             // Fallback: colored circle
+            const cx = x + this.squareSize / 2;
+            const cy = y + this.squareSize / 2;
             const radius = this.squareSize * 0.4;
+            const ctx = this.ctx;
+
             ctx.beginPath();
-            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
 
             if (isWhite) {
-                const grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
+                const grad = ctx.createRadialGradient(cx - radius * 0.3, cy - radius * 0.3, radius * 0.1, cx, cy, radius);
                 grad.addColorStop(0, '#fff');
                 grad.addColorStop(1, '#ccc');
                 ctx.fillStyle = grad;
             } else {
-                const grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
+                const grad = ctx.createRadialGradient(cx - radius * 0.3, cy - radius * 0.3, radius * 0.1, cx, cy, radius);
                 grad.addColorStop(0, '#555');
                 grad.addColorStop(1, '#222');
                 ctx.fillStyle = grad;
